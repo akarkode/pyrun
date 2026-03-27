@@ -1,0 +1,1698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PyRun — Python Browser Sandbox</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <style>
+    /* =========================================================
+       CSS CUSTOM PROPERTIES
+    ========================================================= */
+    :root, [data-theme="dark"] {
+      /* — Dark base — */
+      --bg:               #06070f;
+      --bg-solid:         #06070f;
+      --surface:          #0c0d1e;
+      --surface-elevated: #111228;
+      --border:           #1a1b35;
+      --border-hi:        #2d2f60;
+      --header-bg:        rgba(12,13,30,.88);
+      --panel-shadow:     0 20px 50px rgba(0,0,0,.45);
+      --header-shadow:    0 4px 24px rgba(0,0,0,.4), 0 0 0 .5px rgba(110,106,255,.1) inset;
+
+      /* — Vivid accents — */
+      --accent:           #6e6aff;
+      --accent-secondary: #a8a4ff;
+      --accent-glow:      rgba(110,106,255,.22);
+      --cyan:             #22e5ff;
+      --cyan-glow:        rgba(34,229,255,.12);
+
+      /* — Semantic — */
+      --success:          #00e676;
+      --run-green:        #22c55e;
+      --run-green-dark:   #15803d;
+      --error:            #ff5252;
+      --warning:          #ffca28;
+
+      /* — Text — */
+      --text-primary:     #eef0ff;
+      --text-secondary:   #9ba5c7;
+      --text-muted:       #3d4468;
+
+      /* — Code surface — */
+      --code-bg:          #08091a;
+
+      /* — Background orbs — */
+      --orb-1: rgba(110,106,255,.13);
+      --orb-2: rgba(34,229,255,.07);
+      --orb-3: rgba(110,106,255,.03);
+      --dot-color: rgba(110,106,255,.18);
+
+      /* — Layout — */
+      --header-h:         52px;
+      --tabs-h:           38px;
+      --toolbar-h:        46px;
+      --gap:              10px;
+      --radius:           14px;
+    }
+
+    /* =========================================================
+       LIGHT THEME
+    ========================================================= */
+    [data-theme="light"] {
+      --bg:               #f0f1f7;
+      --bg-solid:         #f0f1f7;
+      --surface:          #e7e8f0;
+      --surface-elevated: #ffffff;
+      --border:           #d0d2e0;
+      --border-hi:        #b8bbd0;
+      --header-bg:        rgba(255,255,255,.82);
+      --panel-shadow:     0 8px 30px rgba(100,110,140,.12);
+      --header-shadow:    0 2px 12px rgba(100,110,140,.1), 0 0 0 1px rgba(0,0,0,.04);
+
+      --accent:           #5856eb;
+      --accent-secondary: #7371f8;
+      --accent-glow:      rgba(88,86,235,.15);
+      --cyan:             #06a8c5;
+      --cyan-glow:        rgba(6,168,197,.08);
+
+      --success:          #16a34a;
+      --run-green:        #16a34a;
+      --run-green-dark:   #15803d;
+      --error:            #dc2626;
+      --warning:          #d97706;
+
+      --text-primary:     #1a1c2e;
+      --text-secondary:   #4a4e6a;
+      --text-muted:       #8b90a8;
+
+      --code-bg:          #f8f9fc;
+
+      --orb-1: rgba(88,86,235,.06);
+      --orb-2: rgba(6,168,197,.04);
+      --orb-3: rgba(88,86,235,.02);
+      --dot-color: rgba(88,86,235,.06);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body { height: 100%; overflow: hidden; }
+
+    /* Smooth theme transitions on key elements */
+    #header, #left-panel, #right-panel, #divider, #toast,
+    .file-tabs-bar, .editor-toolbar, .console-tabs-bar,
+    .out-block, .out-block-hdr, #output-area, #empty-state,
+    .snippet-menu, #run-btn, .file-tab, .console-tab,
+    .snippet-btn, #clear-btn, .lang-badge, .shortcut-hint kbd,
+    .copy-btn, .out-dur {
+      transition: background .3s ease, border-color .3s ease,
+                  color .3s ease, box-shadow .3s ease;
+    }
+
+    body {
+      font-family: 'Syne', sans-serif;
+      color: var(--text-primary);
+      background:
+        radial-gradient(ellipse 900px 700px at 8% 0%,  var(--orb-1) 0%, transparent 55%),
+        radial-gradient(ellipse 700px 500px at 92% 95%, var(--orb-2) 0%, transparent 55%),
+        radial-gradient(ellipse 500px 400px at 50% 50%, var(--orb-3) 0%, transparent 70%),
+        var(--bg);
+      position: relative;
+      transition: background .35s ease, color .25s ease;
+    }
+
+    /* Subtle dot-grid pattern */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        radial-gradient(circle, var(--dot-color) 1px, transparent 1px);
+      background-size: 28px 28px;
+      pointer-events: none; z-index: 0;
+      mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 40%, transparent 100%);
+      -webkit-mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 40%, transparent 100%);
+    }
+
+    /* =========================================================
+       LOADING OVERLAY
+    ========================================================= */
+    #loading-overlay {
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(ellipse 900px 700px at 10% 5%,  var(--orb-1) 0%, transparent 55%),
+        radial-gradient(ellipse 600px 500px at 90% 95%, var(--orb-2) 0%, transparent 55%),
+        var(--bg-solid);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 9999;
+      transition: opacity .6s ease, visibility .6s ease;
+    }
+    #loading-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+    .ov-logo {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 52px;
+      animation: ovPulse 2s ease-in-out infinite;
+    }
+    .ov-icon {
+      width: 62px; height: 62px;
+      background: linear-gradient(135deg, var(--accent), #9d6eff);
+      border-radius: 18px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700; font-size: 20px; color: #fff;
+      box-shadow: 0 0 50px rgba(110,106,255,.5), 0 0 100px rgba(110,106,255,.2);
+    }
+    .ov-wordmark {
+      font-size: 34px; font-weight: 800;
+      color: var(--text-primary); letter-spacing: -.5px;
+    }
+    .ov-wordmark span { color: var(--accent-secondary); }
+
+    .ov-spinner {
+      width: 44px; height: 44px;
+      border: 3px solid rgba(110,106,255,.15);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin-bottom: 24px;
+    }
+    #loading-msg {
+      font-size: 13px; color: var(--text-secondary);
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: .06em; min-height: 20px;
+    }
+    .loading-msg-enter { animation: msgFade .3s ease; }
+
+    @keyframes ovPulse { 0%,100%{opacity:1} 50%{opacity:.75} }
+    @keyframes spin    { to{transform:rotate(360deg)} }
+    @keyframes msgFade { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+
+    /* =========================================================
+       APP SHELL — floating layout with breathing room
+    ========================================================= */
+    #app {
+      position: relative; z-index: 1;
+      display: flex; flex-direction: column;
+      height: 100vh;
+      /* space on all 4 sides so panels don't touch edges */
+      padding: var(--gap) var(--gap) var(--gap);
+      gap: var(--gap);
+      opacity: 0;
+      animation: appFadeIn .5s ease .1s forwards;
+    }
+    @keyframes appFadeIn { to{opacity:1} }
+
+    /* =========================================================
+       HEADER — floating rounded card
+    ========================================================= */
+    #header {
+      height: var(--header-h);
+      background: var(--header-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--header-shadow);
+      display: flex; align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      flex-shrink: 0;
+      position: relative; z-index: 20;
+      animation: slideDown .45s cubic-bezier(.22,.68,0,1.2) .05s both;
+      transition: background .3s, border-color .3s, box-shadow .3s;
+    }
+    @keyframes slideDown {
+      from{transform:translateY(-16px);opacity:0}
+      to{transform:none;opacity:1}
+    }
+
+    .hdr-left  { display:flex; align-items:center; gap:12px; }
+    .hdr-right { display:flex; align-items:center; gap:10px; }
+
+    .hdr-icon {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, var(--accent), #9d6eff);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700; font-size: 12px; color: #fff;
+      letter-spacing: -.5px;
+      box-shadow: 0 0 16px var(--accent-glow);
+      flex-shrink: 0;
+    }
+    .hdr-title {
+      display: flex; flex-direction: column; gap: 1px;
+    }
+    .hdr-name {
+      font-size: 17px; font-weight: 800; letter-spacing: -.4px;
+      line-height: 1.1;
+    }
+    .hdr-name span { color: var(--accent-secondary); }
+    .hdr-tagline {
+      font-size: 10px; color: var(--text-secondary);
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: .04em;
+      line-height: 1;
+    }
+
+    /* ── Theme toggle ─────────────────────────────────────── */
+    #theme-toggle {
+      width: 36px; height: 36px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-hi);
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-secondary);
+      transition: background .2s, border-color .2s, color .2s, transform .15s;
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+    }
+    #theme-toggle:hover {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+      color: var(--accent);
+      transform: scale(1.05);
+    }
+    #theme-toggle:active { transform: scale(.95); }
+
+    /* sun/moon icons — only the active one is visible */
+    #theme-toggle .icon-sun,
+    #theme-toggle .icon-moon { position: absolute; transition: opacity .25s, transform .35s; }
+
+    /* dark mode: show moon, hide sun */
+    [data-theme="dark"] #theme-toggle .icon-moon,
+    :root:not([data-theme]) #theme-toggle .icon-moon {
+      opacity: 1; transform: rotate(0deg);
+    }
+    [data-theme="dark"] #theme-toggle .icon-sun,
+    :root:not([data-theme]) #theme-toggle .icon-sun {
+      opacity: 0; transform: rotate(-90deg) scale(.5);
+    }
+    /* light mode: show sun, hide moon */
+    [data-theme="light"] #theme-toggle .icon-sun {
+      opacity: 1; transform: rotate(0deg);
+    }
+    [data-theme="light"] #theme-toggle .icon-moon {
+      opacity: 0; transform: rotate(90deg) scale(.5);
+    }
+
+    /* =========================================================
+       PANELS CONTAINER
+    ========================================================= */
+    #panels {
+      display: flex; flex: 1;
+      overflow: hidden; min-height: 0;
+      gap: var(--gap);
+      animation: panelsFadeUp .45s cubic-bezier(.22,.68,0,1.1) .18s both;
+    }
+    @keyframes panelsFadeUp {
+      from{transform:translateY(10px);opacity:0}
+      to{transform:none;opacity:1}
+    }
+
+    /* =========================================================
+       LEFT PANEL — floating card
+    ========================================================= */
+    #left-panel {
+      display: flex; flex-direction: column;
+      flex: 0 0 calc(50% - var(--gap) / 2);
+      min-width: 30%;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--panel-shadow);
+    }
+
+    /* =========================================================
+       RESIZABLE DIVIDER — transparent gap with hover indicator
+    ========================================================= */
+    #divider {
+      flex: 0 0 0px;        /* gap between panels is provided by #panels gap */
+      width: 0;
+      cursor: col-resize;
+      position: relative;
+      user-select: none;
+      z-index: 10;
+      /* extend clickable area outward via negative margin */
+      margin: 0 calc(var(--gap) / -2);
+      padding: 0 calc(var(--gap) / 2);
+    }
+    #divider::after {
+      content: '';
+      position: absolute;
+      top: 10%; bottom: 10%;
+      left: 50%; transform: translateX(-50%);
+      width: 2px;
+      background: transparent;
+      border-radius: 2px;
+      transition: background .2s, box-shadow .2s;
+    }
+    #divider:hover::after,
+    #divider.dragging::after {
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    /* =========================================================
+       RIGHT PANEL — floating card
+    ========================================================= */
+    #right-panel {
+      display: flex; flex-direction: column;
+      flex: 1;
+      min-width: 30%;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--panel-shadow);
+    }
+
+    /* =========================================================
+       FILE TABS BAR
+    ========================================================= */
+    .file-tabs-bar {
+      height: var(--tabs-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: stretch;
+      flex-shrink: 0; padding: 0 6px; gap: 2px;
+      overflow-x: auto; overflow-y: hidden;
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+    .file-tab {
+      display: flex; align-items: center; gap: 7px;
+      padding: 0 14px;
+      font-size: 12px; font-weight: 600;
+      color: var(--text-muted);
+      cursor: default; white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      transition: color .15s, border-color .15s, background .15s;
+      border-radius: 6px 6px 0 0;
+    }
+    .file-tab.active {
+      color: var(--text-primary);
+      border-bottom-color: var(--accent);
+      background: rgba(110,106,255,.09);
+    }
+    .file-tab svg { flex-shrink: 0; }
+
+    /* =========================================================
+       EDITOR TOOLBAR
+    ========================================================= */
+    .editor-toolbar {
+      height: var(--toolbar-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+      justify-content: space-between;
+      padding: 0 14px; gap: 8px;
+      flex-shrink: 0; position: relative; z-index: 5;
+    }
+    .toolbar-left  { display:flex; align-items:center; gap:8px; }
+    .toolbar-right { display:flex; align-items:center; gap:8px; }
+
+    .lang-badge {
+      background: rgba(110,106,255,.1);
+      border: 1px solid rgba(110,106,255,.25);
+      color: var(--accent-secondary);
+      font-size: 10px; font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 3px 9px; border-radius: 5px;
+      letter-spacing: .03em;
+    }
+    .shortcut-hint {
+      font-size: 10px; color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+      display: flex; align-items: center; gap: 3px;
+    }
+    .shortcut-hint kbd {
+      display: inline-flex; align-items: center;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-hi);
+      border-radius: 3px; padding: 1px 5px;
+      font-size: 9px; font-family: inherit;
+      color: var(--text-secondary);
+    }
+
+    /* =========================================================
+       CONSOLE TABS BAR
+    ========================================================= */
+    .console-tabs-bar {
+      height: var(--tabs-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: stretch;
+      flex-shrink: 0; padding: 0 6px;
+      gap: 2px;
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+    .console-tab {
+      display: flex; align-items: center; gap: 7px;
+      padding: 0 14px;
+      font-size: 12px; font-weight: 600;
+      color: var(--text-muted);
+      white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      transition: color .15s, border-color .15s, background .15s;
+      border-radius: 6px 6px 0 0;
+    }
+    .console-tab.active {
+      color: var(--text-primary);
+      border-bottom-color: var(--success);
+      background: rgba(0,230,118,.06);
+    }
+    .console-toolbar {
+      margin-left: auto;
+      display: flex; align-items: center;
+      padding-right: 6px; gap: 8px;
+    }
+
+    /* =========================================================
+       SNIPPET DROPDOWN
+    ========================================================= */
+    .snippet-wrap { position: relative; }
+
+    .snippet-btn {
+      background: rgba(110,106,255,.07);
+      border: 1px solid rgba(110,106,255,.2);
+      color: var(--text-secondary);
+      font-family: 'Syne', sans-serif;
+      font-size: 10px; font-weight: 700;
+      height: 28px;
+      padding: 0 11px; border-radius: 6px;
+      cursor: pointer; display:flex; align-items:center; gap:5px;
+      transition: border-color .15s, color .15s, background .15s;
+      white-space: nowrap; letter-spacing: .03em;
+    }
+    .snippet-btn:hover {
+      border-color: rgba(110,106,255,.5);
+      color: var(--accent-secondary);
+      background: rgba(110,106,255,.14);
+    }
+
+    .snippet-menu {
+      position: absolute; top: calc(100% + 6px); left: 0;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-hi);
+      border-radius: 10px;
+      min-width: 200px;
+      box-shadow: 0 16px 48px rgba(0,0,0,.65), 0 0 0 1px rgba(110,106,255,.1);
+      z-index: 200; overflow: hidden;
+      display: none;
+    }
+    .snippet-menu.open {
+      display: block;
+      animation: dropIn .15s ease;
+    }
+    @keyframes dropIn {
+      from{opacity:0;transform:translateY(-5px)}
+      to{opacity:1;transform:none}
+    }
+    .snippet-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 14px;
+      font-size: 12px; font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: background .1s, color .1s;
+    }
+    .snippet-item:hover {
+      background: rgba(110,106,255,.16);
+      color: var(--text-primary);
+    }
+    .snippet-item .sn-icon { font-size: 13px; width: 18px; text-align: center; }
+    .snippet-sep {
+      height: 1px; background: var(--border); margin: 4px 0;
+    }
+    .snippet-menu-title {
+      padding: 7px 14px 4px;
+      font-size: 9px; font-weight: 700; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--text-muted);
+    }
+
+    /* =========================================================
+       CODEMIRROR EDITOR WRAPPER
+    ========================================================= */
+    #editor-wrap {
+      flex: 1; overflow: hidden; position: relative;
+    }
+    .cm-editor {
+      height: 100% !important;
+    }
+    .cm-scroller {
+      overflow: auto !important;
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 13.5px !important;
+      line-height: 1.65 !important;
+    }
+
+    /* =========================================================
+       RUN BUTTON — compact, inline in editor toolbar (Replit-style)
+    ========================================================= */
+    #run-btn {
+      height: 32px;
+      background: linear-gradient(135deg, var(--run-green-dark), var(--run-green));
+      border: none; color: #fff;
+      font-family: 'Syne', sans-serif;
+      font-size: 12px; font-weight: 700;
+      letter-spacing: .06em;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 7px;
+      padding: 0 16px;
+      border-radius: 8px;
+      position: relative; overflow: hidden;
+      transition: box-shadow .2s, transform .1s, opacity .2s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    #run-btn::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: rgba(255,255,255,.1);
+      opacity: 0; transition: opacity .15s;
+      border-radius: inherit;
+    }
+    #run-btn:hover:not(:disabled)::before { opacity: 1; }
+    #run-btn:hover:not(:disabled) {
+      box-shadow: 0 0 18px rgba(34,197,94,.5), 0 2px 8px rgba(0,0,0,.3);
+      transform: translateY(-1px);
+    }
+    #run-btn:active:not(:disabled) { transform: translateY(0); }
+    #run-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+    #run-btn .btn-spinner {
+      width: 13px; height: 13px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+      display: none; flex-shrink: 0;
+    }
+    #run-btn.running .btn-spinner { display: block; }
+    #run-btn.running .btn-icon    { display: none; }
+    #run-btn.running .btn-text    { opacity: .75; }
+
+    /* =========================================================
+       OUTPUT AREA
+    ========================================================= */
+    #output-area {
+      flex: 1; overflow-y: auto; padding: 14px;
+      background: var(--code-bg);
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-hi) transparent;
+    }
+    #output-area::-webkit-scrollbar { width: 4px; }
+    #output-area::-webkit-scrollbar-thumb {
+      background: var(--border-hi); border-radius: 2px;
+    }
+
+    /* Empty state */
+    #empty-state {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      height: 100%; min-height: 200px;
+      text-align: center; padding: 32px;
+    }
+    .empty-glyph {
+      font-size: 48px; margin-bottom: 20px; opacity: .25;
+    }
+    .empty-title {
+      font-size: 14px; font-weight: 700;
+      color: var(--text-muted); margin-bottom: 7px;
+    }
+    .empty-sub {
+      font-size: 11px;
+      color: var(--text-muted); opacity: .6;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Clear button */
+    #clear-btn {
+      background: transparent;
+      border: 1px solid var(--border-hi);
+      color: var(--text-muted);
+      font-family: 'Syne', sans-serif;
+      font-size: 10px; font-weight: 700;
+      height: 26px;
+      padding: 0 10px; border-radius: 5px;
+      cursor: pointer; letter-spacing: .03em;
+      transition: border-color .15s, color .15s, background .15s;
+    }
+    #clear-btn:hover {
+      border-color: rgba(255,82,82,.4);
+      color: var(--error);
+      background: rgba(255,82,82,.07);
+    }
+
+    /* =========================================================
+       OUTPUT BLOCKS
+    ========================================================= */
+    .out-block {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-hi);
+      border-radius: 10px;
+      margin-bottom: 10px;
+      overflow: hidden;
+      animation: blockIn .22s cubic-bezier(.22,.68,0,1.2);
+    }
+    @keyframes blockIn {
+      from{opacity:0;transform:translateY(8px) scale(.99)}
+      to{opacity:1;transform:none}
+    }
+    .out-block.is-error {
+      border-color: rgba(255,82,82,.35);
+      animation: blockIn .22s ease, shake .4s ease .05s;
+    }
+    @keyframes shake {
+      0%,100%{transform:translateX(0)}
+      20%{transform:translateX(-5px)}
+      40%{transform:translateX(5px)}
+      60%{transform:translateX(-3px)}
+      80%{transform:translateX(3px)}
+    }
+
+    .out-block-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 5px 10px;
+      background: rgba(110,106,255,.04);
+      border-bottom: 1px solid var(--border);
+    }
+    .out-block.is-error .out-block-hdr {
+      background: rgba(255,82,82,.04);
+    }
+    .out-meta { display:flex; align-items:center; gap:8px; }
+    .out-ts {
+      font-size: 10px; color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .out-dur {
+      font-size: 10px; font-family: 'JetBrains Mono', monospace;
+      color: var(--accent-secondary);
+      background: rgba(110,106,255,.12);
+      padding: 1px 7px; border-radius: 3px;
+    }
+    .out-block.is-error .out-dur {
+      color: var(--error);
+      background: rgba(255,82,82,.1);
+    }
+
+    .copy-btn {
+      background: transparent;
+      border: 1px solid var(--border-hi);
+      color: var(--text-muted);
+      font-family: 'Syne', sans-serif;
+      font-size: 9px; font-weight: 700;
+      padding: 2px 8px; border-radius: 4px;
+      cursor: pointer; letter-spacing: .04em;
+      text-transform: uppercase;
+      transition: border-color .15s, color .15s, background .15s;
+    }
+    .copy-btn:hover  {
+      border-color: rgba(110,106,255,.5);
+      color: var(--accent-secondary);
+      background: rgba(110,106,255,.08);
+    }
+    .copy-btn.copied {
+      border-color: rgba(0,230,118,.4);
+      color: var(--success);
+    }
+
+    .out-content {
+      padding: 11px 13px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px; line-height: 1.7;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .out-content.stdout { color: var(--text-primary); }
+    .out-content.stderr { color: var(--error); }
+    .out-content .err-type { font-weight: 700; color: #ff6b6b; }
+    .out-content .err-line { color: rgba(255,82,82,.6); font-size: 11.5px; }
+
+    .out-plot { padding: 12px; }
+    .out-plot img {
+      max-width: 100%; border-radius: 8px;
+      border: 1px solid var(--border-hi);
+      display: block; margin: 0 auto;
+    }
+
+    /* =========================================================
+       TOAST
+    ========================================================= */
+    #toast {
+      position: fixed; bottom: 20px; right: 20px;
+      background: var(--surface-elevated);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-hi);
+      border-radius: 10px;
+      padding: 10px 16px;
+      display: flex; align-items: center; gap: 9px;
+      font-size: 12px; font-weight: 700;
+      z-index: 9998;
+      opacity: 0; transform: translateY(12px) scale(.96);
+      transition: opacity .2s ease, transform .2s cubic-bezier(.22,.68,0,1.2);
+      pointer-events: none;
+      box-shadow: 0 8px 28px rgba(0,0,0,.5);
+      letter-spacing: .03em;
+    }
+    #toast.visible {
+      opacity: 1; transform: translateY(0) scale(1);
+    }
+    #toast.t-success { border-color: rgba(0,230,118,.3); color: var(--success); }
+    #toast.t-error   { border-color: rgba(255,82,82,.3);  color: var(--error);   }
+    #toast.t-info    { border-color: rgba(110,106,255,.3); color: var(--accent-secondary); }
+    .toast-ico { font-size: 14px; }
+
+    /* =========================================================
+       FILE:// WARNING BANNER
+    ========================================================= */
+    #file-warning {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(6,7,15,.96);
+      z-index: 99999;
+      align-items: center; justify-content: center;
+    }
+    #file-warning.show { display: flex; }
+    .fw-box {
+      background: var(--surface-elevated);
+      border: 1px solid rgba(248,113,113,.4);
+      border-radius: 12px;
+      padding: 36px 40px;
+      max-width: 480px; text-align: center;
+    }
+    .fw-icon  { font-size: 40px; margin-bottom: 16px; }
+    .fw-title { font-size: 17px; font-weight: 800; color: var(--error); margin-bottom: 10px; }
+    .fw-body  { font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-bottom: 20px; }
+    .fw-code  {
+      display: inline-block;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px; color: var(--accent-secondary);
+      margin-bottom: 8px; width: 100%;
+    }
+
+    /* =========================================================
+       SCROLLBAR GLOBAL
+    ========================================================= */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<!-- ============================================================
+     FILE:// WARNING (shown when not served over HTTP)
+============================================================ -->
+<div id="file-warning">
+  <div class="fw-box">
+    <div class="fw-icon">⚠️</div>
+    <div class="fw-title">Serve over HTTP</div>
+    <div class="fw-body">
+      PyRun cannot run from a <code>file://</code> URL — browsers block the
+      cross-origin requests that Pyodide and ESM imports require.<br><br>
+      Start a local server and open it via <strong>localhost</strong>:
+    </div>
+    <div class="fw-code">python -m http.server 8080</div>
+    <div class="fw-code">npx serve .</div>
+    <div class="fw-code" style="margin-bottom:0">npx live-server</div>
+  </div>
+</div>
+
+<!-- ============================================================
+     LOADING OVERLAY
+============================================================ -->
+<div id="loading-overlay">
+  <div class="ov-logo">
+    <div class="ov-icon">Py</div>
+    <div class="ov-wordmark">Py<span>Run</span></div>
+  </div>
+  <div class="ov-spinner"></div>
+  <div id="loading-msg">Initializing…</div>
+</div>
+
+<!-- ============================================================
+     APP
+============================================================ -->
+<div id="app">
+
+  <!-- Header -->
+  <header id="header">
+    <div class="hdr-left">
+      <div class="hdr-icon">Py</div>
+      <div class="hdr-title">
+        <div class="hdr-name">Py<span>Run</span></div>
+        <div class="hdr-tagline">Python sandbox in your browser</div>
+      </div>
+    </div>
+    <div class="hdr-right">
+      <button id="theme-toggle" aria-label="Toggle light/dark mode">
+        <!-- Sun icon (shown in light mode) -->
+        <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <!-- Moon icon (shown in dark mode) -->
+        <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Panels -->
+  <div id="panels">
+
+    <!-- Left: Editor -->
+    <div id="left-panel">
+
+      <!-- Row 1: file tabs (Replit-style) -->
+      <div class="file-tabs-bar">
+        <div class="file-tab active">
+          <!-- Python file icon -->
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2C9.5 2 8 3.2 8 5v1H5C3.3 6 2 7.3 2 9v6c0 1.7 1.3 3 3 3h3v1c0 1.8 1.5 3 4 3s4-1.2 4-3v-1h3c1.7 0 3-1.3 3-3V9c0-1.7-1.3-3-3-3h-3V5c0-1.8-1.5-3-4-3z" fill="rgba(124,106,247,.5)" stroke="none"/>
+            <circle cx="9.5" cy="8.5" r="1" fill="#a78bfa"/>
+            <circle cx="14.5" cy="15.5" r="1" fill="#a78bfa"/>
+          </svg>
+          main.py
+        </div>
+      </div>
+
+      <!-- Row 2: toolbar with Run button -->
+      <div class="editor-toolbar">
+        <div class="toolbar-left">
+          <span class="lang-badge">Python 3</span>
+          <div class="snippet-wrap">
+            <button class="snippet-btn" id="snippet-btn" aria-label="Code Snippets">
+              <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                <rect x="1" y="1" width="12" height="12" rx="2"/>
+                <line x1="4" y1="5" x2="10" y2="5"/>
+                <line x1="4" y1="8" x2="7.5" y2="8"/>
+              </svg>
+              Snippets ▾
+            </button>
+            <div class="snippet-menu" id="snippet-menu" role="menu">
+              <div class="snippet-menu-title">Presets</div>
+              <div class="snippet-item" data-snippet="hello"><span class="sn-icon">👋</span>Hello World</div>
+              <div class="snippet-item" data-snippet="numpy"><span class="sn-icon">🔢</span>NumPy Array</div>
+              <div class="snippet-item" data-snippet="pandas"><span class="sn-icon">📊</span>Pandas DataFrame</div>
+              <div class="snippet-item" data-snippet="matplotlib"><span class="sn-icon">📈</span>Matplotlib Plot</div>
+              <div class="snippet-sep"></div>
+              <div class="snippet-item" data-snippet="fibonacci"><span class="sn-icon">🌀</span>Fibonacci Generator</div>
+              <div class="snippet-item" data-snippet="listcomp"><span class="sn-icon">⚡</span>List Comprehension</div>
+            </div>
+          </div>
+        </div>
+        <div class="toolbar-right">
+          <span class="shortcut-hint"><kbd>Ctrl</kbd><kbd>↵</kbd></span>
+          <button id="run-btn" disabled>
+            <div class="btn-spinner"></div>
+            <svg class="btn-icon" width="11" height="11" viewBox="0 0 10 10" fill="currentColor">
+              <path d="M2 1.2L8.5 5 2 8.8V1.2Z"/>
+            </svg>
+            <span class="btn-text">Run</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Editor -->
+      <div id="editor-wrap"></div>
+    </div>
+
+    <!-- Divider -->
+    <div id="divider" role="separator" aria-label="Resize panels"></div>
+
+    <!-- Right: Console output -->
+    <div id="right-panel">
+
+      <!-- Console tabs bar -->
+      <div class="console-tabs-bar">
+        <div class="console-tab active">
+          <!-- Terminal icon -->
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="1" y="1" width="14" height="14" rx="2"/>
+            <polyline points="4,5.5 7,8 4,10.5"/>
+            <line x1="8.5" y1="10.5" x2="12" y2="10.5"/>
+          </svg>
+          Console
+        </div>
+        <div class="console-toolbar">
+          <button id="clear-btn">Clear</button>
+        </div>
+      </div>
+
+      <div id="output-area">
+        <div id="empty-state">
+          <div class="empty-glyph">⚡</div>
+          <div class="empty-title">Run your code to see output here</div>
+          <div class="empty-sub">Press Ctrl+Enter or click Run</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /panels -->
+</div><!-- /app -->
+
+<!-- Toast -->
+<div id="toast" role="status" aria-live="polite">
+  <span class="toast-ico" id="toast-ico">✓</span>
+  <span id="toast-msg"></span>
+</div>
+
+<!-- ============================================================
+     MAIN SCRIPT
+============================================================ -->
+<script type="module">
+// ── Detect file:// and bail early with helpful message ────────
+if (location.protocol === "file:") {
+  document.getElementById("file-warning").classList.add("show");
+  document.getElementById("loading-overlay").classList.add("hidden");
+  throw new Error("PyRun must be served over HTTP. See on-screen instructions.");
+}
+
+// ── CodeMirror 6 imports ──────────────────────────────────────
+// codemirror meta-package only reliably exports basicSetup/minimalSetup;
+// EditorState and EditorView must be imported from their own packages.
+import { basicSetup }
+  from "https://esm.sh/codemirror@6.0.1";
+import { EditorView }
+  from "https://esm.sh/@codemirror/view@6";
+import { EditorState }
+  from "https://esm.sh/@codemirror/state@6";
+import { python }
+  from "https://esm.sh/@codemirror/lang-python@6";
+
+// ── Snippets ─────────────────────────────────────────────────
+const SNIPPETS = {
+  hello: `# Hello World
+print("Hello, World!")
+print("Welcome to PyRun! 🐍")`,
+
+  numpy: `# NumPy Array Operations
+import numpy as np
+
+# Create arrays
+a = np.array([1, 2, 3, 4, 5])
+b = np.linspace(0, 2 * np.pi, 6)
+
+print("Array a:", a)
+print("Linspace b:", b.round(3))
+print("Sum:", a.sum(), "  Mean:", a.mean(), "  Std:", a.std().round(4))
+
+# Matrix operations
+M = np.array([[1, 2], [3, 4]])
+print("\\nMatrix M:")
+print(M)
+print("Determinant:", np.linalg.det(M).round(2))
+print("Eigenvalues:", np.linalg.eigvals(M).round(4))
+print("Inverse:\\n", np.linalg.inv(M))`,
+
+  pandas: `# Pandas DataFrame
+import pandas as pd
+import numpy as np
+
+rng = np.random.default_rng(42)
+df = pd.DataFrame({
+    "Name":   ["Alice", "Bob", "Charlie", "Diana", "Eve"],
+    "Age":    [25, 30, 35, 28, 32],
+    "Score":  rng.uniform(70, 100, 5).round(1),
+    "City":   ["NYC", "LA", "Chicago", "NYC", "LA"],
+})
+
+print("DataFrame:")
+print(df.to_string(index=False))
+print("\\nSummary Statistics:")
+print(df[["Age","Score"]].describe().round(2))
+print("\\nAverage score by city:")
+print(df.groupby("City")["Score"].mean().round(2))`,
+
+  matplotlib: `# Matplotlib Plot
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import numpy as np
+
+mpl.rcParams.update({
+    "text.color":   "#e2e8f0",
+    "axes.labelcolor": "#e2e8f0",
+    "xtick.color":  "#64748b",
+    "ytick.color":  "#64748b",
+})
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))
+fig.patch.set_facecolor("#0f0f17")
+
+# — Wave plot —
+x = np.linspace(0, 4 * np.pi, 300)
+ax1.set_facecolor("#13131a")
+ax1.plot(x, np.sin(x),  lw=2, color="#7c6af7", label="sin(x)")
+ax1.plot(x, np.cos(x),  lw=2, color="#34d399", label="cos(x)", alpha=.85)
+ax1.fill_between(x, np.sin(x), alpha=.08, color="#7c6af7")
+ax1.axhline(0, color="#252535", lw=1)
+ax1.set_title("Trig Functions", color="#e2e8f0", pad=10)
+ax1.legend(facecolor="#1a1a24", edgecolor="#252535", labelcolor="#e2e8f0")
+ax1.spines[:].set_color("#252535")
+
+# — Bar chart —
+cats = ["Alpha","Beta","Gamma","Delta","Epsilon"]
+vals = [42, 78, 56, 91, 63]
+colors = ["#7c6af7","#a78bfa","#34d399","#fbbf24","#f87171"]
+ax2.set_facecolor("#13131a")
+bars = ax2.bar(cats, vals, color=colors, alpha=.85, width=.6)
+ax2.bar_label(bars, fmt="%d", color="#e2e8f0", fontsize=9, padding=3)
+ax2.set_title("Bar Chart", color="#e2e8f0", pad=10)
+ax2.spines[:].set_color("#252535")
+ax2.set_ylim(0, 110)
+
+plt.tight_layout(pad=1.5)
+plt.show()
+print("Plot rendered above ↑")`,
+
+  fibonacci: `# Fibonacci Generator
+def fibonacci(n):
+    """Yield the first n Fibonacci numbers."""
+    a, b = 0, 1
+    for _ in range(n):
+        yield a
+        a, b = b, a + b
+
+fibs = list(fibonacci(16))
+
+print("Fibonacci sequence:")
+for i, f in enumerate(fibs):
+    bar = "█" * (f * 20 // max(fibs, default=1))
+    print(f"  F({i:2d}) = {f:5d}  {bar}")
+
+phi = (1 + 5 ** 0.5) / 2
+approx = fibs[-1] / fibs[-2]
+print(f"\\nGolden ratio φ  ≈ {phi:.8f}")
+print(f"F({len(fibs)-1})/F({len(fibs)-2})   = {approx:.8f}")
+print(f"Difference      = {abs(phi - approx):.2e}")`,
+
+  listcomp: `# List & Dict Comprehensions
+import math
+
+# Squares and cubes
+squares = [x**2 for x in range(1, 11)]
+cubes   = [x**3 for x in range(1, 11)]
+print("Squares:", squares)
+print("Cubes:  ", cubes)
+
+# Filter: evens only
+evens = [x for x in range(1, 30) if x % 2 == 0]
+print("\\nEvens <30:", evens)
+
+# Nested: multiplication table
+table = [[i*j for j in range(1,6)] for i in range(1,6)]
+print("\\n5×5 Multiplication table:")
+for row in table:
+    print("  ", "  ".join(f"{v:3d}" for v in row))
+
+# Dict comprehension
+lengths = {w: len(w) for w in ["python","sandbox","pyrun","wasm","browser"]}
+print("\\nWord lengths:", lengths)
+
+# Sieve of Eratosthenes via set comprehension
+limit  = 60
+primes = sorted({x for x in range(2, limit)
+                 if all(x % i for i in range(2, int(math.sqrt(x))+1))})
+print(f"\\nPrimes < {limit}: {primes}")`,
+};
+
+// ── Default starter code ──────────────────────────────────────
+const STARTER_CODE =
+`# Welcome to PyRun 🐍
+import sys
+print(f"Python {sys.version}")
+print("Hello, World!")`;
+
+// ── Custom CodeMirror Theme ───────────────────────────────────
+// The theme reads CSS variables so it works in both dark & light mode
+const pyrunTheme = EditorView.theme({
+  "&": {
+    backgroundColor: "var(--code-bg)",
+    color: "var(--text-primary)",
+    height: "100%",
+  },
+  ".cm-content": {
+    caretColor: "var(--accent)",
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: "13.5px",
+    lineHeight: "1.7",
+    padding: "12px 0",
+  },
+  ".cm-cursor, .cm-dropCursor": {
+    borderLeftColor: "var(--accent)",
+    borderLeftWidth: "2px",
+  },
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
+    backgroundColor: "var(--accent-glow) !important",
+  },
+  ".cm-activeLine": {
+    backgroundColor: "var(--accent-glow)",
+  },
+  ".cm-selectionMatch": {
+    backgroundColor: "var(--accent-glow)",
+  },
+  "&.cm-focused .cm-matchingBracket": {
+    backgroundColor: "rgba(0,200,100,.15)",
+    outline: "1px solid rgba(0,200,100,.35)",
+  },
+  "&.cm-focused .cm-nonmatchingBracket": {
+    backgroundColor: "rgba(220,40,40,.12)",
+    outline: "1px solid rgba(220,40,40,.3)",
+  },
+  ".cm-gutters": {
+    backgroundColor: "var(--surface)",
+    color: "var(--text-muted)",
+    border: "none",
+    borderRight: "1px solid var(--border)",
+    minWidth: "44px",
+  },
+  ".cm-gutterElement": {
+    padding: "0 10px 0 8px",
+  },
+  ".cm-activeLineGutter": {
+    backgroundColor: "var(--accent-glow)",
+    color: "var(--accent)",
+  },
+  ".cm-foldPlaceholder": {
+    backgroundColor: "var(--surface-elevated)",
+    border: "1px solid var(--border)",
+    color: "var(--text-primary)",
+  },
+  ".cm-tooltip": {
+    backgroundColor: "var(--surface-elevated)",
+    border: "1px solid var(--border-hi)",
+    borderRadius: "8px",
+    boxShadow: "var(--panel-shadow)",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul": {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: "12px",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
+    backgroundColor: "var(--accent-glow)",
+    color: "var(--text-primary)",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+    padding: "5px 12px",
+    color: "var(--text-secondary)",
+  },
+  ".cm-completionIcon": { display: "none" },
+  ".cm-searchMatch": {
+    backgroundColor: "rgba(255,180,40,.2)",
+    outline: "1px solid rgba(255,180,40,.4)",
+  },
+  ".cm-searchMatch.cm-searchMatch-selected": {
+    backgroundColor: "var(--accent-glow)",
+  },
+  ".cm-panels": {
+    backgroundColor: "var(--surface)",
+    color: "var(--text-primary)",
+  },
+  ".cm-panels.cm-panels-bottom": {
+    borderTop: "1px solid var(--border)",
+  },
+}, { dark: true });
+
+// ── Create Editor ─────────────────────────────────────────────
+const editorWrap = document.getElementById("editor-wrap");
+
+const editor = new EditorView({
+  state: EditorState.create({
+    doc: STARTER_CODE,
+    extensions: [
+      basicSetup,
+      python(),
+      pyrunTheme,
+    ],
+  }),
+  parent: editorWrap,
+});
+
+// Ctrl+Enter to run (DOM-level so no extra imports needed)
+editor.dom.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    e.preventDefault();
+    executeCode();
+  }
+});
+
+// ── Theme toggle (sun/moon) with localStorage persistence ─────
+function getPreferredTheme() {
+  const saved = localStorage.getItem("pyrun-theme");
+  if (saved) return saved;
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("pyrun-theme", theme);
+
+  // Swap CodeMirror background to match
+  const cmEl = document.querySelector(".cm-editor");
+  if (cmEl) {
+    const bg = theme === "light" ? "#f8f9fc" : "#08091a";
+    cmEl.style.setProperty("--cm-bg", bg);
+  }
+}
+
+// apply immediately (before paint)
+applyTheme(getPreferredTheme());
+
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  applyTheme(next);
+});
+
+// ── State ─────────────────────────────────────────────────────
+let pyodide = null;
+let isRunning = false;
+let toastTimer = null;
+
+// ── Loading overlay ───────────────────────────────────────────
+const loadingOverlay = document.getElementById("loading-overlay");
+const loadingMsg     = document.getElementById("loading-msg");
+
+const LOADING_MSGS = [
+  "Loading Pyodide…",
+  "Importing packages…",
+  "Warming up NumPy…",
+  "Almost ready…",
+];
+
+let msgIdx = 0;
+function cycleMsg(text) {
+  loadingMsg.classList.remove("loading-msg-enter");
+  void loadingMsg.offsetWidth;
+  loadingMsg.textContent = text || LOADING_MSGS[Math.min(msgIdx++, LOADING_MSGS.length - 1)];
+  loadingMsg.classList.add("loading-msg-enter");
+}
+cycleMsg(LOADING_MSGS[msgIdx++]);
+const msgTimer = setInterval(() => cycleMsg(), 1600);
+
+// ── Pyodide bootstrap ─────────────────────────────────────────
+async function initPyodide() {
+  // Load pyodide script dynamically
+  await new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js";
+    s.onload  = resolve;
+    s.onerror = () => reject(new Error("Failed to load Pyodide script"));
+    document.head.appendChild(s);
+  });
+
+  cycleMsg(LOADING_MSGS[1]);
+  pyodide = await window.loadPyodide();
+
+  cycleMsg(LOADING_MSGS[2]);
+  await pyodide.loadPackage(["numpy", "pandas", "matplotlib"]);
+
+  cycleMsg(LOADING_MSGS[3]);
+
+  // One-time Python environment setup.
+  // IMPORTANT: initialise matplotlib BEFORE installing the import blocker —
+  // matplotlib's own __init__ imports subprocess internally, and blocking it
+  // too early causes an ImportError during package setup.
+  await pyodide.runPythonAsync(`
+import sys, io, builtins
+
+# ── Patch input() — would hang the WASM thread ───────────────
+def _noop_input(prompt=""):
+    raise RuntimeError(
+        str(prompt) + "\\n[PyRun] input() is not supported in sandbox mode"
+    )
+builtins.input = _noop_input
+
+# ── Initialise matplotlib with the non-interactive Agg backend ─
+# Must happen BEFORE the import blocker so that matplotlib's own
+# internal 'import subprocess' (in __init__.py) is not blocked.
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot  # fully initialise now
+
+# ── Block dangerous modules for user code ────────────────────
+_orig_import = builtins.__import__
+_BLOCKED = frozenset({
+    "requests", "socket", "subprocess",
+    "multiprocessing", "urllib.request",
+    "http.client",
+})
+def _safe_import(name, *args, **kwargs):
+    root = name.split(".")[0]
+    if root in _BLOCKED:
+        raise ImportError(
+            f"Module '{name}' is restricted in the PyRun sandbox."
+        )
+    return _orig_import(name, *args, **kwargs)
+builtins.__import__ = _safe_import
+`);
+
+  clearInterval(msgTimer);
+
+  // Hide overlay
+  loadingOverlay.classList.add("hidden");
+
+  // Enable run button
+  document.getElementById("run-btn").disabled = false;
+}
+
+initPyodide().catch((err) => {
+  clearInterval(msgTimer);
+  loadingMsg.textContent = "Error: " + err.message;
+  console.error("[PyRun] init error:", err);
+});
+
+// ── Execute user code ─────────────────────────────────────────
+async function executeCode() {
+  if (!pyodide || isRunning) return;
+
+  const code = editor.state.doc.toString().trim();
+  if (!code) return;
+
+  isRunning = true;
+  const runBtn = document.getElementById("run-btn");
+  runBtn.disabled = true;
+  runBtn.classList.add("running");
+
+  // Remove empty state if present
+  document.getElementById("empty-state")?.remove();
+
+  const t0 = performance.now();
+
+  let stdout   = "";
+  let stderr   = "";
+  let plots    = [];
+  let errorMsg = null;
+
+  try {
+    // ── Setup capture ──
+    await pyodide.runPythonAsync(`
+import sys, io, base64
+
+_pyrun_out   = io.StringIO()
+_pyrun_err   = io.StringIO()
+_pyrun_plots = []
+
+sys.stdout = _pyrun_out
+sys.stderr = _pyrun_err
+
+try:
+    import matplotlib.pyplot as _plt
+    def _pyrun_show(*a, **kw):
+        buf = io.BytesIO()
+        _plt.savefig(buf, format="png", bbox_inches="tight",
+                     dpi=96, facecolor="#0f0f17", edgecolor="none")
+        buf.seek(0)
+        _pyrun_plots.append(base64.b64encode(buf.read()).decode())
+        buf.close()
+        _plt.close("all")
+    _plt.show = _pyrun_show
+except Exception:
+    pass
+`);
+
+    // ── Run user code ──
+    try {
+      await pyodide.runPythonAsync(code);
+    } catch (pyErr) {
+      errorMsg = pyErr.message || String(pyErr);
+    }
+
+    // ── Collect output ──
+    stdout = pyodide.globals.get("_pyrun_out").getvalue();
+    stderr = pyodide.globals.get("_pyrun_err").getvalue();
+    const plotsProxy = pyodide.globals.get("_pyrun_plots");
+    plots  = plotsProxy ? Array.from(plotsProxy.toJs()) : [];
+
+    // ── Restore sys.stdout / sys.stderr ──
+    await pyodide.runPythonAsync(`
+sys.stdout = sys.__stdout__
+sys.stderr = sys.__stderr__
+`);
+
+  } catch (jsErr) {
+    errorMsg = jsErr.message || String(jsErr);
+    console.error("[PyRun] execution error:", jsErr);
+    // Attempt to restore streams
+    try {
+      await pyodide.runPythonAsync(
+        "import sys; sys.stdout = sys.__stdout__; sys.stderr = sys.__stderr__"
+      );
+    } catch (_) { /* ignore */ }
+  }
+
+  const duration  = ((performance.now() - t0) / 1000).toFixed(2);
+  const timestamp = new Date().toLocaleTimeString([], {
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+
+  renderOutputBlock({ stdout, stderr, errorMsg, plots, duration, timestamp });
+
+  isRunning = false;
+  runBtn.disabled = false;
+  runBtn.classList.remove("running");
+
+  if (errorMsg || stderr) {
+    showToast("Execution error", "t-error", "✕");
+  } else {
+    showToast(`Ran in ${duration}s`, "t-success", "✓");
+  }
+}
+
+// ── Render output block ───────────────────────────────────────
+function renderOutputBlock({ stdout, stderr, errorMsg, plots, duration, timestamp }) {
+  const area    = document.getElementById("output-area");
+  const hasErr  = !!(errorMsg || stderr);
+  const allText = [stdout, ...plots.map(() => "[plot]"), stderr, errorMsg]
+                    .filter(Boolean).join("\n");
+
+  const block = document.createElement("div");
+  block.className = "out-block" + (hasErr ? " is-error" : "");
+
+  // Header row
+  const hdr = document.createElement("div");
+  hdr.className = "out-block-hdr";
+
+  const meta = document.createElement("div");
+  meta.className = "out-meta";
+  meta.innerHTML =
+    `<span class="out-ts">${timestamp}</span>` +
+    `<span class="out-dur">ran in ${duration}s</span>`;
+
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "copy-btn";
+  copyBtn.textContent = "Copy";
+  copyBtn.onclick = () => {
+    navigator.clipboard.writeText(allText).then(() => {
+      copyBtn.textContent = "Copied!";
+      copyBtn.classList.add("copied");
+      setTimeout(() => {
+        copyBtn.textContent = "Copy";
+        copyBtn.classList.remove("copied");
+      }, 1500);
+    });
+  };
+
+  hdr.appendChild(meta);
+  hdr.appendChild(copyBtn);
+  block.appendChild(hdr);
+
+  // Stdout
+  if (stdout) {
+    const pre = document.createElement("pre");
+    pre.className = "out-content stdout";
+    pre.textContent = stdout;
+    block.appendChild(pre);
+  }
+
+  // Plots
+  for (const b64 of plots) {
+    const wrap = document.createElement("div");
+    wrap.className = "out-plot";
+    const img = document.createElement("img");
+    img.src = `data:image/png;base64,${b64}`;
+    img.alt = "Matplotlib figure";
+    img.loading = "lazy";
+    wrap.appendChild(img);
+    block.appendChild(wrap);
+  }
+
+  // Stderr / error
+  if (stderr || errorMsg) {
+    const raw = (errorMsg || "") + (stderr ? "\n" + stderr : "");
+    const pre = document.createElement("pre");
+    pre.className = "out-content stderr";
+    pre.innerHTML = formatPythonError(raw.trim());
+    block.appendChild(pre);
+  }
+
+  area.appendChild(block);
+  // Auto-scroll
+  requestAnimationFrame(() => { area.scrollTop = area.scrollHeight; });
+}
+
+// ── Format Python traceback ───────────────────────────────────
+function formatPythonError(raw) {
+  // Escape HTML first
+  const esc = raw
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Bold the error type at end of traceback (e.g. "ValueError: bad value")
+  return esc.replace(
+    /^(\w+(?:Error|Exception|Warning|Interrupt|KeyboardInterrupt|StopIteration|GeneratorExit|SystemExit|BaseException))(:\s*)/gm,
+    '<span class="err-type">$1</span>$2'
+  ).replace(
+    /^(  File ".+", line \d+.*)/gm,
+    '<span class="err-line">$1</span>'
+  );
+}
+
+// ── Toast ─────────────────────────────────────────────────────
+function showToast(msg, cls, ico) {
+  const el    = document.getElementById("toast");
+  const msgEl = document.getElementById("toast-msg");
+  const icoEl = document.getElementById("toast-ico");
+
+  el.className  = "";          // clear
+  void el.offsetWidth;         // reflow
+  msgEl.textContent = msg;
+  icoEl.textContent = ico;
+  el.classList.add("visible", cls);
+
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.classList.remove("visible");
+  }, 2200);
+}
+
+// ── Resizable split pane ──────────────────────────────────────
+const divider    = document.getElementById("divider");
+const leftPanel  = document.getElementById("left-panel");
+const panelsCont = document.getElementById("panels");
+let   dragging   = false;
+
+divider.addEventListener("mousedown", (e) => {
+  dragging = true;
+  divider.classList.add("dragging");
+  document.body.style.cursor    = "col-resize";
+  document.body.style.userSelect = "none";
+  e.preventDefault();
+});
+
+document.addEventListener("mousemove", (e) => {
+  if (!dragging) return;
+  const rect  = panelsCont.getBoundingClientRect();
+  let   pct   = ((e.clientX - rect.left) / rect.width) * 100;
+  pct = Math.max(30, Math.min(70, pct));
+  // account for the CSS gap between panels
+  leftPanel.style.flex = `0 0 calc(${pct}% - var(--gap) / 2)`;
+});
+
+document.addEventListener("mouseup", () => {
+  if (!dragging) return;
+  dragging = false;
+  divider.classList.remove("dragging");
+  document.body.style.cursor     = "";
+  document.body.style.userSelect = "";
+});
+
+// Touch support
+divider.addEventListener("touchstart", (e) => {
+  dragging = true;
+  e.preventDefault();
+}, { passive: false });
+
+document.addEventListener("touchmove", (e) => {
+  if (!dragging) return;
+  const touch = e.touches[0];
+  const rect  = panelsCont.getBoundingClientRect();
+  let   pct   = ((touch.clientX - rect.left) / rect.width) * 100;
+  pct = Math.max(30, Math.min(70, pct));
+  leftPanel.style.flex = `0 0 calc(${pct}% - var(--gap) / 2)`;
+}, { passive: true });
+
+document.addEventListener("touchend", () => { dragging = false; });
+
+// ── Snippet dropdown ──────────────────────────────────────────
+const snippetBtn  = document.getElementById("snippet-btn");
+const snippetMenu = document.getElementById("snippet-menu");
+
+snippetBtn.addEventListener("click", (e) => {
+  snippetMenu.classList.toggle("open");
+  e.stopPropagation();
+});
+
+document.addEventListener("click", () => {
+  snippetMenu.classList.remove("open");
+});
+
+snippetMenu.querySelectorAll(".snippet-item").forEach((item) => {
+  item.addEventListener("click", (e) => {
+    const key  = item.dataset.snippet;
+    const code = SNIPPETS[key];
+    if (code) {
+      editor.dispatch({
+        changes: { from: 0, to: editor.state.doc.length, insert: code },
+      });
+      editor.focus();
+    }
+    snippetMenu.classList.remove("open");
+    e.stopPropagation();
+  });
+});
+
+// ── Run button ────────────────────────────────────────────────
+document.getElementById("run-btn").addEventListener("click", executeCode);
+
+// ── Clear button ──────────────────────────────────────────────
+document.getElementById("clear-btn").addEventListener("click", () => {
+  const area   = document.getElementById("output-area");
+  const blocks = area.querySelectorAll(".out-block");
+
+  if (blocks.length === 0) return;
+
+  blocks.forEach((b) => {
+    b.style.transition = "opacity .2s ease, transform .2s ease";
+    b.style.opacity    = "0";
+    b.style.transform  = "translateY(-6px)";
+  });
+
+  setTimeout(() => {
+    area.innerHTML = "";
+    const empty = document.createElement("div");
+    empty.id = "empty-state";
+    empty.innerHTML = `
+      <div class="empty-glyph">⚡</div>
+      <div class="empty-title">Run your code to see output here</div>
+      <div class="empty-sub">Press Ctrl+Enter or click Run Code</div>`;
+    area.appendChild(empty);
+  }, 210);
+});
+</script>
+</body>
+</html>
