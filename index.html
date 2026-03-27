@@ -105,7 +105,7 @@
     #header, #left-panel, #right-panel, #divider, #toast,
     .file-tabs-bar, .editor-toolbar, .console-tabs-bar,
     .out-block, .out-block-hdr, #output-area, #empty-state,
-    .snippet-menu, #run-btn, .file-tab, .console-tab,
+    .snippet-menu, #run-btn, #stop-btn, .file-tab, .console-tab,
     .snippet-btn, #clear-btn, .lang-badge, .shortcut-hint kbd,
     .copy-btn, .out-dur {
       transition: background .3s ease, border-color .3s ease,
@@ -601,6 +601,30 @@
     #run-btn.running .btn-icon    { display: none; }
     #run-btn.running .btn-text    { opacity: .75; }
 
+    #stop-btn {
+      height: 32px;
+      background: transparent;
+      border: 1.5px solid rgba(255,82,82,.45);
+      color: var(--error);
+      font-family: 'Syne', sans-serif;
+      font-size: 12px; font-weight: 700;
+      letter-spacing: .06em;
+      cursor: pointer;
+      display: none; align-items: center; gap: 6px;
+      padding: 0 14px;
+      border-radius: 8px;
+      white-space: nowrap; flex-shrink: 0;
+      transition: background .15s, border-color .15s, box-shadow .15s, transform .1s;
+    }
+    #stop-btn:hover {
+      background: rgba(255,82,82,.1);
+      border-color: rgba(255,82,82,.75);
+      box-shadow: 0 0 14px rgba(255,82,82,.25);
+      transform: translateY(-1px);
+    }
+    #stop-btn:active { transform: translateY(0); }
+    #stop-btn.visible { display: flex; }
+
     /* =========================================================
        OUTPUT AREA
     ========================================================= */
@@ -743,6 +767,27 @@
       border: 1px solid var(--border-hi);
       display: block; margin: 0 auto;
     }
+
+    /* Running state — pulsing border while streaming */
+    .out-block.is-running {
+      border-color: rgba(110,106,255,.45);
+      box-shadow: 0 0 0 1px rgba(110,106,255,.15);
+    }
+    .out-block.is-running .out-block-hdr {
+      background: rgba(110,106,255,.07);
+    }
+    .run-spinner {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border: 1.5px solid rgba(110,106,255,.3);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .copy-btn:disabled { opacity: .35; cursor: default; }
 
     /* =========================================================
        TOAST
@@ -927,6 +972,12 @@
         </div>
         <div class="toolbar-right">
           <span class="shortcut-hint"><kbd>Ctrl</kbd><kbd>↵</kbd></span>
+          <button id="stop-btn" aria-label="Stop execution">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+              <rect x="1.5" y="1.5" width="7" height="7" rx="1.5"/>
+            </svg>
+            Stop
+          </button>
           <button id="run-btn" disabled>
             <div class="btn-spinner"></div>
             <svg class="btn-icon" width="11" height="11" viewBox="0 0 10 10" fill="currentColor">
@@ -984,6 +1035,119 @@
 <!-- ============================================================
      MAIN SCRIPT
 ============================================================ -->
+<!-- Worker code stored as inert text — avoids nested template-literal escaping issues -->
+<script type="text/plain" id="worker-tpl">
+importScripts("https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js");
+
+let pyodide = null;
+
+async function initPyodide() {
+  pyodide = await loadPyodide();
+  await pyodide.loadPackage(["numpy", "pandas", "matplotlib"]);
+
+  // Matplotlib must be initialised BEFORE the import blocker because its own
+  // __init__ imports subprocess internally.
+  await pyodide.runPythonAsync(`
+import sys, io, builtins
+
+def _noop_input(prompt=""):
+    raise RuntimeError(str(prompt) + "\\n[PyRun] input() is not supported in sandbox mode")
+builtins.input = _noop_input
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot
+
+_orig_import = builtins.__import__
+_BLOCKED = frozenset({"requests","socket","subprocess","multiprocessing","urllib.request","http.client"})
+def _safe_import(name, *args, **kwargs):
+    root = name.split(".")[0]
+    if root in _BLOCKED:
+        raise ImportError(f"Module '{name}' is restricted in the PyRun sandbox.")
+    return _orig_import(name, *args, **kwargs)
+builtins.__import__ = _safe_import
+
+class _StreamCapture:
+    def __init__(self, cb):
+        self._cb = cb
+    def write(self, text):
+        if text: self._cb(text)
+    def flush(self): pass
+    def fileno(self): raise AttributeError("no fileno")
+    def isatty(self): return False
+`);
+
+  self.postMessage({ type: "ready" });
+}
+
+self.onmessage = async function(e) {
+  const { type, code } = e.data;
+
+  if (type === "init") {
+    try {
+      await initPyodide();
+    } catch(err) {
+      self.postMessage({ type: "init_error", error: err.message || String(err) });
+    }
+    return;
+  }
+
+  if (type === "run") {
+    pyodide.globals.set("_stdout_cb", (text) => {
+      self.postMessage({ type: "stdout", data: text });
+    });
+    pyodide.globals.set("_stderr_cb", (text) => {
+      self.postMessage({ type: "stderr", data: text });
+    });
+    pyodide.globals.set("_plot_cb", (b64) => {
+      self.postMessage({ type: "plot", data: b64 });
+    });
+
+    try {
+      await pyodide.runPythonAsync(`
+import sys, io, base64
+
+sys.stdout = _StreamCapture(_stdout_cb)
+sys.stderr = _StreamCapture(_stderr_cb)
+
+try:
+    import matplotlib.pyplot as _plt
+    def _pyrun_show(*a, **kw):
+        buf = io.BytesIO()
+        _plt.savefig(buf, format="png", bbox_inches="tight", dpi=96,
+                     facecolor="#0f0f17", edgecolor="none")
+        buf.seek(0)
+        _plot_cb(base64.b64encode(buf.read()).decode())
+        buf.close()
+        _plt.close("all")
+    _plt.show = _pyrun_show
+except Exception:
+    pass
+`);
+
+      try {
+        await pyodide.runPythonAsync(code);
+      } catch(pyErr) {
+        self.postMessage({ type: "stderr", data: pyErr.message || String(pyErr) });
+        self.postMessage({ type: "done", error: true });
+        return;
+      }
+
+      self.postMessage({ type: "done", error: false });
+
+    } catch(jsErr) {
+      self.postMessage({ type: "done", error: true });
+    } finally {
+      try {
+        await pyodide.runPythonAsync(
+          "import sys; sys.stdout=sys.__stdout__; sys.stderr=sys.__stderr__"
+        );
+      } catch(_) {}
+    }
+  }
+};
+</script>
+
 <script type="module">
 // ── Detect file:// and bail early with helpful message ────────
 if (location.protocol === "file:") {
@@ -1288,9 +1452,16 @@ document.getElementById("theme-toggle").addEventListener("click", () => {
 });
 
 // ── State ─────────────────────────────────────────────────────
-let pyodide = null;
-let isRunning = false;
-let toastTimer = null;
+let worker       = null;
+let workerReady  = false;
+let isRunning    = false;
+let toastTimer   = null;
+let runTimeoutId = null;
+let liveBlock    = null;   // the output block being streamed into
+let liveStdout   = null;   // <pre> for live stdout
+let liveStderr   = null;   // <pre> for live stderr
+let liveHasErr   = false;
+let liveT0       = 0;
 
 // ── Loading overlay ───────────────────────────────────────────
 const loadingOverlay = document.getElementById("loading-overlay");
@@ -1313,245 +1484,236 @@ function cycleMsg(text) {
 cycleMsg(LOADING_MSGS[msgIdx++]);
 const msgTimer = setInterval(() => cycleMsg(), 1600);
 
-// ── Pyodide bootstrap ─────────────────────────────────────────
-async function initPyodide() {
-  // Load pyodide script dynamically
-  await new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js";
-    s.onload  = resolve;
-    s.onerror = () => reject(new Error("Failed to load Pyodide script"));
-    document.head.appendChild(s);
-  });
+// ── Worker code read from the inert <script type="text/plain"> tag ───────────
+// Storing the worker source there avoids all nested template-literal escaping.
+const WORKER_CODE = document.getElementById("worker-tpl").textContent;
 
-  cycleMsg(LOADING_MSGS[1]);
-  pyodide = await window.loadPyodide();
+// ── Worker lifecycle ──────────────────────────────────────────
+function createWorker() {
+  const blob = new Blob([WORKER_CODE], { type: "application/javascript" });
+  const url  = URL.createObjectURL(blob);
+  worker = new Worker(url);
+  URL.revokeObjectURL(url);
 
-  cycleMsg(LOADING_MSGS[2]);
-  await pyodide.loadPackage(["numpy", "pandas", "matplotlib"]);
+  worker.onmessage = handleWorkerMessage;
+  worker.onerror   = (e) => {
+    console.error("[PyRun] worker error:", e);
+    clearInterval(msgTimer);
+    loadingMsg.textContent = "Worker error: " + (e.message || "unknown");
+  };
 
-  cycleMsg(LOADING_MSGS[3]);
-
-  // One-time Python environment setup.
-  // IMPORTANT: initialise matplotlib BEFORE installing the import blocker —
-  // matplotlib's own __init__ imports subprocess internally, and blocking it
-  // too early causes an ImportError during package setup.
-  await pyodide.runPythonAsync(`
-import sys, io, builtins
-
-# ── Patch input() — would hang the WASM thread ───────────────
-def _noop_input(prompt=""):
-    raise RuntimeError(
-        str(prompt) + "\\n[PyRun] input() is not supported in sandbox mode"
-    )
-builtins.input = _noop_input
-
-# ── Initialise matplotlib with the non-interactive Agg backend ─
-# Must happen BEFORE the import blocker so that matplotlib's own
-# internal 'import subprocess' (in __init__.py) is not blocked.
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot  # fully initialise now
-
-# ── Block dangerous modules for user code ────────────────────
-_orig_import = builtins.__import__
-_BLOCKED = frozenset({
-    "requests", "socket", "subprocess",
-    "multiprocessing", "urllib.request",
-    "http.client",
-})
-def _safe_import(name, *args, **kwargs):
-    root = name.split(".")[0]
-    if root in _BLOCKED:
-        raise ImportError(
-            f"Module '{name}' is restricted in the PyRun sandbox."
-        )
-    return _orig_import(name, *args, **kwargs)
-builtins.__import__ = _safe_import
-`);
-
-  clearInterval(msgTimer);
-
-  // Hide overlay
-  loadingOverlay.classList.add("hidden");
-
-  // Enable run button
-  document.getElementById("run-btn").disabled = false;
+  worker.postMessage({ type: "init" });
 }
 
-initPyodide().catch((err) => {
-  clearInterval(msgTimer);
-  loadingMsg.textContent = "Error: " + err.message;
-  console.error("[PyRun] init error:", err);
-});
+function reinitWorker() {
+  if (worker) { worker.terminate(); worker = null; }
+  workerReady = false;
+  createWorker();
+}
 
-// ── Execute user code ─────────────────────────────────────────
-async function executeCode() {
-  if (!pyodide || isRunning) return;
+function handleWorkerMessage(e) {
+  const { type, data, error } = e.data;
 
-  const code = editor.state.doc.toString().trim();
-  if (!code) return;
+  switch (type) {
 
-  isRunning = true;
-  const runBtn = document.getElementById("run-btn");
-  runBtn.disabled = true;
-  runBtn.classList.add("running");
+    case "ready":
+      workerReady = true;
+      clearInterval(msgTimer);
+      loadingOverlay.classList.add("hidden");
+      document.getElementById("run-btn").disabled = false;
+      break;
 
-  // Remove empty state if present
+    case "init_error":
+      clearInterval(msgTimer);
+      loadingMsg.textContent = "Init error: " + (e.data.error || "unknown");
+      console.error("[PyRun] init error:", e.data.error);
+      break;
+
+    case "stdout":
+      if (liveBlock) appendLiveText("stdout", data);
+      break;
+
+    case "stderr":
+      if (liveBlock) appendLiveText("stderr", data);
+      break;
+
+    case "plot":
+      if (liveBlock) appendLivePlot(data);
+      break;
+
+    case "done": {
+      clearTimeout(runTimeoutId);
+      const duration = ((performance.now() - liveT0) / 1000).toFixed(2);
+      finalizeLiveBlock(error, duration);
+
+      isRunning = false;
+      const runBtn  = document.getElementById("run-btn");
+      const stopBtn = document.getElementById("stop-btn");
+      runBtn.disabled = false;
+      runBtn.classList.remove("running");
+      stopBtn.classList.remove("visible");
+
+      if (error) {
+        showToast("Execution error", "t-error", "✕");
+      } else {
+        showToast(`Ran in ${duration}s`, "t-success", "✓");
+      }
+      break;
+    }
+  }
+}
+
+// ── Live output block helpers ─────────────────────────────────
+function startLiveBlock() {
+  const area = document.getElementById("output-area");
   document.getElementById("empty-state")?.remove();
 
-  const t0 = performance.now();
-
-  let stdout   = "";
-  let stderr   = "";
-  let plots    = [];
-  let errorMsg = null;
-
-  try {
-    // ── Setup capture ──
-    await pyodide.runPythonAsync(`
-import sys, io, base64
-
-_pyrun_out   = io.StringIO()
-_pyrun_err   = io.StringIO()
-_pyrun_plots = []
-
-sys.stdout = _pyrun_out
-sys.stderr = _pyrun_err
-
-try:
-    import matplotlib.pyplot as _plt
-    def _pyrun_show(*a, **kw):
-        buf = io.BytesIO()
-        _plt.savefig(buf, format="png", bbox_inches="tight",
-                     dpi=96, facecolor="#0f0f17", edgecolor="none")
-        buf.seek(0)
-        _pyrun_plots.append(base64.b64encode(buf.read()).decode())
-        buf.close()
-        _plt.close("all")
-    _plt.show = _pyrun_show
-except Exception:
-    pass
-`);
-
-    // ── Run user code ──
-    try {
-      await pyodide.runPythonAsync(code);
-    } catch (pyErr) {
-      errorMsg = pyErr.message || String(pyErr);
-    }
-
-    // ── Collect output ──
-    stdout = pyodide.globals.get("_pyrun_out").getvalue();
-    stderr = pyodide.globals.get("_pyrun_err").getvalue();
-    const plotsProxy = pyodide.globals.get("_pyrun_plots");
-    plots  = plotsProxy ? Array.from(plotsProxy.toJs()) : [];
-
-    // ── Restore sys.stdout / sys.stderr ──
-    await pyodide.runPythonAsync(`
-sys.stdout = sys.__stdout__
-sys.stderr = sys.__stderr__
-`);
-
-  } catch (jsErr) {
-    errorMsg = jsErr.message || String(jsErr);
-    console.error("[PyRun] execution error:", jsErr);
-    // Attempt to restore streams
-    try {
-      await pyodide.runPythonAsync(
-        "import sys; sys.stdout = sys.__stdout__; sys.stderr = sys.__stderr__"
-      );
-    } catch (_) { /* ignore */ }
-  }
-
-  const duration  = ((performance.now() - t0) / 1000).toFixed(2);
-  const timestamp = new Date().toLocaleTimeString([], {
-    hour: "2-digit", minute: "2-digit", second: "2-digit"
-  });
-
-  renderOutputBlock({ stdout, stderr, errorMsg, plots, duration, timestamp });
-
-  isRunning = false;
-  runBtn.disabled = false;
-  runBtn.classList.remove("running");
-
-  if (errorMsg || stderr) {
-    showToast("Execution error", "t-error", "✕");
-  } else {
-    showToast(`Ran in ${duration}s`, "t-success", "✓");
-  }
-}
-
-// ── Render output block ───────────────────────────────────────
-function renderOutputBlock({ stdout, stderr, errorMsg, plots, duration, timestamp }) {
-  const area    = document.getElementById("output-area");
-  const hasErr  = !!(errorMsg || stderr);
-  const allText = [stdout, ...plots.map(() => "[plot]"), stderr, errorMsg]
-                    .filter(Boolean).join("\n");
+  liveHasErr = false;
+  liveStdout = null;
+  liveStderr = null;
 
   const block = document.createElement("div");
-  block.className = "out-block" + (hasErr ? " is-error" : "");
+  block.className = "out-block is-running";
 
-  // Header row
   const hdr = document.createElement("div");
   hdr.className = "out-block-hdr";
 
   const meta = document.createElement("div");
   meta.className = "out-meta";
+  const ts = new Date().toLocaleTimeString([], {
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
   meta.innerHTML =
-    `<span class="out-ts">${timestamp}</span>` +
-    `<span class="out-dur">ran in ${duration}s</span>`;
+    `<span class="out-ts">${ts}</span>` +
+    `<span class="out-dur out-dur-live"><span class="run-spinner"></span>running…</span>`;
 
   const copyBtn = document.createElement("button");
   copyBtn.className = "copy-btn";
   copyBtn.textContent = "Copy";
-  copyBtn.onclick = () => {
-    navigator.clipboard.writeText(allText).then(() => {
-      copyBtn.textContent = "Copied!";
-      copyBtn.classList.add("copied");
-      setTimeout(() => {
-        copyBtn.textContent = "Copy";
-        copyBtn.classList.remove("copied");
-      }, 1500);
-    });
-  };
+  copyBtn.disabled = true;
 
   hdr.appendChild(meta);
   hdr.appendChild(copyBtn);
   block.appendChild(hdr);
 
-  // Stdout
-  if (stdout) {
-    const pre = document.createElement("pre");
-    pre.className = "out-content stdout";
-    pre.textContent = stdout;
-    block.appendChild(pre);
-  }
-
-  // Plots
-  for (const b64 of plots) {
-    const wrap = document.createElement("div");
-    wrap.className = "out-plot";
-    const img = document.createElement("img");
-    img.src = `data:image/png;base64,${b64}`;
-    img.alt = "Matplotlib figure";
-    img.loading = "lazy";
-    wrap.appendChild(img);
-    block.appendChild(wrap);
-  }
-
-  // Stderr / error
-  if (stderr || errorMsg) {
-    const raw = (errorMsg || "") + (stderr ? "\n" + stderr : "");
-    const pre = document.createElement("pre");
-    pre.className = "out-content stderr";
-    pre.innerHTML = formatPythonError(raw.trim());
-    block.appendChild(pre);
-  }
-
   area.appendChild(block);
-  // Auto-scroll
+  liveBlock = block;
   requestAnimationFrame(() => { area.scrollTop = area.scrollHeight; });
+}
+
+function appendLiveText(stream, text) {
+  const area = document.getElementById("output-area");
+  if (stream === "stdout") {
+    if (!liveStdout) {
+      liveStdout = document.createElement("pre");
+      liveStdout.className = "out-content stdout";
+      liveBlock.appendChild(liveStdout);
+    }
+    liveStdout.textContent += text;
+  } else {
+    liveHasErr = true;
+    if (!liveStderr) {
+      liveStderr = document.createElement("pre");
+      liveStderr.className = "out-content stderr";
+      liveBlock.appendChild(liveStderr);
+    }
+    // Append raw text first; formatPythonError applied on finalize
+    liveStderr.textContent += text;
+  }
+  requestAnimationFrame(() => { area.scrollTop = area.scrollHeight; });
+}
+
+function appendLivePlot(b64) {
+  const area = document.getElementById("output-area");
+  const wrap = document.createElement("div");
+  wrap.className = "out-plot";
+  const img = document.createElement("img");
+  img.src = `data:image/png;base64,${b64}`;
+  img.alt = "Matplotlib figure";
+  img.loading = "lazy";
+  wrap.appendChild(img);
+  liveBlock.appendChild(wrap);
+  requestAnimationFrame(() => { area.scrollTop = area.scrollHeight; });
+}
+
+function finalizeLiveBlock(hasError, duration) {
+  if (!liveBlock) return;
+
+  liveBlock.classList.remove("is-running");
+  if (hasError || liveHasErr) liveBlock.classList.add("is-error");
+
+  // Replace spinner with duration
+  const durEl = liveBlock.querySelector(".out-dur-live");
+  if (durEl) {
+    durEl.className = "out-dur";
+    durEl.textContent = `ran in ${duration}s`;
+  }
+
+  // Apply error formatting to stderr pre
+  if (liveStderr) {
+    liveStderr.innerHTML = formatPythonError(liveStderr.textContent.trim());
+  }
+
+  // Enable copy button with final text
+  const copyBtn = liveBlock.querySelector(".copy-btn");
+  if (copyBtn) {
+    copyBtn.disabled = false;
+    const parts = [];
+    if (liveStdout) parts.push(liveStdout.textContent);
+    if (liveStderr) parts.push(liveStderr.textContent);
+    const allText = parts.join("\n").trim();
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(allText).then(() => {
+        copyBtn.textContent = "Copied!";
+        copyBtn.classList.add("copied");
+        setTimeout(() => {
+          copyBtn.textContent = "Copy";
+          copyBtn.classList.remove("copied");
+        }, 1500);
+      });
+    };
+  }
+
+  liveBlock  = null;
+  liveStdout = null;
+  liveStderr = null;
+}
+
+// ── Initialise ────────────────────────────────────────────────
+createWorker();
+
+// ── Execute user code ─────────────────────────────────────────
+function executeCode() {
+  if (!workerReady || isRunning) return;
+
+  const code = editor.state.doc.toString().trim();
+  if (!code) return;
+
+  isRunning = true;
+  const runBtn  = document.getElementById("run-btn");
+  const stopBtn = document.getElementById("stop-btn");
+  runBtn.disabled = true;
+  runBtn.classList.add("running");
+  stopBtn.classList.add("visible");
+
+  liveT0 = performance.now();
+  startLiveBlock();
+
+  // 10-second timeout — terminates worker and recreates it
+  runTimeoutId = setTimeout(() => {
+    appendLiveText("stderr", "\n[PyRun] Execution timed out after 10 seconds. Restarting runtime…");
+    finalizeLiveBlock(true, "10.00");
+
+    isRunning = false;
+    runBtn.disabled = false;
+    runBtn.classList.remove("running");
+    stopBtn.classList.remove("visible");
+    showToast("Timed out — runtime reset", "t-error", "✕");
+
+    reinitWorker();
+  }, 10000);
+
+  worker.postMessage({ type: "run", code });
 }
 
 // ── Format Python traceback ───────────────────────────────────
@@ -1668,6 +1830,25 @@ snippetMenu.querySelectorAll(".snippet-item").forEach((item) => {
 
 // ── Run button ────────────────────────────────────────────────
 document.getElementById("run-btn").addEventListener("click", executeCode);
+
+// ── Stop button ───────────────────────────────────────────────
+document.getElementById("stop-btn").addEventListener("click", () => {
+  if (!isRunning) return;
+
+  clearTimeout(runTimeoutId);
+  appendLiveText("stderr", "\n[PyRun] Stopped by user. Restarting runtime…");
+  finalizeLiveBlock(true, ((performance.now() - liveT0) / 1000).toFixed(2));
+
+  isRunning = false;
+  const runBtn = document.getElementById("run-btn");
+  const stopBtn = document.getElementById("stop-btn");
+  runBtn.disabled = false;
+  runBtn.classList.remove("running");
+  stopBtn.classList.remove("visible");
+  showToast("Stopped — runtime reset", "t-error", "✕");
+
+  reinitWorker();
+});
 
 // ── Clear button ──────────────────────────────────────────────
 document.getElementById("clear-btn").addEventListener("click", () => {
