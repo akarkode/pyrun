@@ -52,7 +52,7 @@
       --dot-color: rgba(110,106,255,.18);
 
       /* — Layout — */
-      --header-h:         52px;
+      --header-h:         68px;
       --tabs-h:           38px;
       --toolbar-h:        46px;
       --gap:              10px;
@@ -63,15 +63,15 @@
        LIGHT THEME
     ========================================================= */
     [data-theme="light"] {
-      --bg:               #f0f1f7;
-      --bg-solid:         #f0f1f7;
-      --surface:          #e7e8f0;
+      --bg:               #c8cde8;
+      --bg-solid:         #c8cde8;
+      --surface:          #d8dcf0;
       --surface-elevated: #ffffff;
-      --border:           #d0d2e0;
-      --border-hi:        #b8bbd0;
-      --header-bg:        rgba(255,255,255,.82);
-      --panel-shadow:     0 8px 30px rgba(100,110,140,.12);
-      --header-shadow:    0 2px 12px rgba(100,110,140,.1), 0 0 0 1px rgba(0,0,0,.04);
+      --border:           #bec4dc;
+      --border-hi:        #a8afd0;
+      --header-bg:        rgba(255,255,255,.88);
+      --panel-shadow:     0 8px 32px rgba(60,70,130,.18), 0 2px 8px rgba(60,70,130,.08);
+      --header-shadow:    0 4px 20px rgba(60,70,130,.12), 0 0 0 1px rgba(0,0,0,.06);
 
       --accent:           #5856eb;
       --accent-secondary: #7371f8;
@@ -87,14 +87,14 @@
 
       --text-primary:     #1a1c2e;
       --text-secondary:   #4a4e6a;
-      --text-muted:       #8b90a8;
+      --text-muted:       #7a80a0;
 
-      --code-bg:          #f8f9fc;
+      --code-bg:          #f0f2fc;
 
-      --orb-1: rgba(88,86,235,.06);
-      --orb-2: rgba(6,168,197,.04);
-      --orb-3: rgba(88,86,235,.02);
-      --dot-color: rgba(88,86,235,.06);
+      --orb-1: rgba(88,86,235,.08);
+      --orb-2: rgba(6,168,197,.05);
+      --orb-3: rgba(88,86,235,.03);
+      --dot-color: rgba(88,86,235,.08);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -105,7 +105,7 @@
     #header, #left-panel, #right-panel, #divider, #toast,
     .file-tabs-bar, .editor-toolbar, .console-tabs-bar,
     .out-block, .out-block-hdr, #output-area, #empty-state,
-    .snippet-menu, #run-btn, #stop-btn, .file-tab, .console-tab,
+    .snippet-menu, #run-btn, .file-tab, .console-tab,
     .snippet-btn, #clear-btn, .lang-badge, .shortcut-hint kbd,
     .copy-btn, .out-dur {
       transition: background .3s ease, border-color .3s ease,
@@ -221,7 +221,7 @@
       box-shadow: var(--header-shadow);
       display: flex; align-items: center;
       justify-content: space-between;
-      padding: 0 20px;
+      padding: 0 28px;
       flex-shrink: 0;
       position: relative; z-index: 20;
       animation: slideDown .45s cubic-bezier(.22,.68,0,1.2) .05s both;
@@ -232,30 +232,30 @@
       to{transform:none;opacity:1}
     }
 
-    .hdr-left  { display:flex; align-items:center; gap:12px; }
-    .hdr-right { display:flex; align-items:center; gap:10px; }
+    .hdr-left  { display:flex; align-items:center; gap:14px; }
+    .hdr-right { display:flex; align-items:center; gap:12px; }
 
     .hdr-icon {
-      width: 34px; height: 34px;
+      width: 40px; height: 40px;
       background: linear-gradient(135deg, var(--accent), #9d6eff);
-      border-radius: 9px;
+      border-radius: 11px;
       display: flex; align-items: center; justify-content: center;
       font-family: 'JetBrains Mono', monospace;
-      font-weight: 700; font-size: 12px; color: #fff;
+      font-weight: 700; font-size: 13px; color: #fff;
       letter-spacing: -.5px;
-      box-shadow: 0 0 16px var(--accent-glow);
+      box-shadow: 0 0 20px var(--accent-glow);
       flex-shrink: 0;
     }
     .hdr-title {
-      display: flex; flex-direction: column; gap: 1px;
+      display: flex; flex-direction: column; gap: 3px;
     }
     .hdr-name {
-      font-size: 17px; font-weight: 800; letter-spacing: -.4px;
-      line-height: 1.1;
+      font-size: 19px; font-weight: 800; letter-spacing: -.4px;
+      line-height: 1;
     }
     .hdr-name span { color: var(--accent-secondary); }
     .hdr-tagline {
-      font-size: 10px; color: var(--text-secondary);
+      font-size: 11px; color: var(--text-secondary);
       font-family: 'JetBrains Mono', monospace;
       letter-spacing: .04em;
       line-height: 1;
@@ -369,7 +369,7 @@
       display: flex; flex-direction: column;
       flex: 1;
       min-width: 30%;
-      background: var(--code-bg);
+      background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow: hidden;
@@ -560,7 +560,9 @@
     ========================================================= */
     #run-btn {
       height: 32px;
-      background: linear-gradient(135deg, var(--run-green-dark), var(--run-green));
+      background: linear-gradient(135deg, #5350d4, var(--accent), #22e5ff);
+      background-size: 200% 200%;
+      background-position: 0% 50%;
       border: none; color: #fff;
       font-family: 'Syne', sans-serif;
       font-size: 12px; font-weight: 700;
@@ -570,67 +572,59 @@
       padding: 0 16px;
       border-radius: 8px;
       position: relative; overflow: hidden;
-      transition: box-shadow .2s, transform .1s, opacity .2s;
+      transition: box-shadow .2s, transform .1s, opacity .2s, background-position .4s;
       white-space: nowrap;
       flex-shrink: 0;
     }
     #run-btn::before {
       content: '';
       position: absolute; inset: 0;
-      background: rgba(255,255,255,.1);
+      background: rgba(255,255,255,.12);
       opacity: 0; transition: opacity .15s;
       border-radius: inherit;
     }
     #run-btn:hover:not(:disabled)::before { opacity: 1; }
     #run-btn:hover:not(:disabled) {
-      box-shadow: 0 0 18px rgba(34,197,94,.5), 0 2px 8px rgba(0,0,0,.3);
+      background-position: 100% 50%;
+      box-shadow: 0 0 22px rgba(110,106,255,.55), 0 0 8px rgba(34,229,255,.2), 0 2px 8px rgba(0,0,0,.3);
       transform: translateY(-1px);
     }
     #run-btn:active:not(:disabled) { transform: translateY(0); }
-    #run-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+    #run-btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 
-    #run-btn .btn-spinner {
-      width: 13px; height: 13px;
-      border: 2px solid rgba(255,255,255,.3);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin .65s linear infinite;
-      display: none; flex-shrink: 0;
-    }
-    #run-btn.running .btn-spinner { display: block; }
-    #run-btn.running .btn-icon    { display: none; }
-    #run-btn.running .btn-text    { opacity: .75; }
+    /* Run state: show play icon + "Run", hide stop elements */
+    #run-btn .btn-stop-icon { display: none; }
+    #run-btn .btn-stop-text { display: none; }
 
-    #stop-btn {
-      height: 32px;
-      background: transparent;
-      border: 1.5px solid rgba(255,82,82,.45);
-      color: var(--error);
-      font-family: 'Syne', sans-serif;
-      font-size: 12px; font-weight: 700;
-      letter-spacing: .06em;
-      cursor: pointer;
-      display: none; align-items: center; gap: 6px;
-      padding: 0 14px;
-      border-radius: 8px;
-      white-space: nowrap; flex-shrink: 0;
-      transition: background .15s, border-color .15s, box-shadow .15s, transform .1s;
+    /* Running / stop state */
+    #run-btn.running {
+      background: rgba(220,38,38,.18);
+      background-image: none;
+      border: 1.5px solid rgba(255,82,82,.6);
+      color: #ff6b6b;
+      box-shadow: 0 0 14px rgba(255,82,82,.2);
+      opacity: 1;
+      pointer-events: all;
     }
-    #stop-btn:hover {
-      background: rgba(255,82,82,.1);
-      border-color: rgba(255,82,82,.75);
-      box-shadow: 0 0 14px rgba(255,82,82,.25);
+    #run-btn.running:hover {
+      background: rgba(220,38,38,.32);
+      border-color: rgba(255,82,82,.9);
+      color: #fff;
+      box-shadow: 0 0 22px rgba(255,82,82,.45), 0 2px 8px rgba(0,0,0,.3);
       transform: translateY(-1px);
     }
-    #stop-btn:active { transform: translateY(0); }
-    #stop-btn.visible { display: flex; }
+    #run-btn.running .btn-play-icon { display: none; }
+    #run-btn.running .btn-run-text  { display: none; }
+    #run-btn.running .btn-stop-icon { display: block; }
+    #run-btn.running .btn-stop-text { display: inline; }
+
 
     /* =========================================================
        OUTPUT AREA
     ========================================================= */
     #output-area {
       flex: 1; overflow-y: auto; padding: 14px;
-      background: var(--code-bg);
+      background: var(--surface);
       scrollbar-width: thin;
       scrollbar-color: var(--border-hi) transparent;
     }
@@ -972,18 +966,17 @@
         </div>
         <div class="toolbar-right">
           <span class="shortcut-hint"><kbd>Ctrl</kbd><kbd>↵</kbd></span>
-          <button id="stop-btn" aria-label="Stop execution">
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-              <rect x="1.5" y="1.5" width="7" height="7" rx="1.5"/>
-            </svg>
-            Stop
-          </button>
           <button id="run-btn" disabled>
-            <div class="btn-spinner"></div>
-            <svg class="btn-icon" width="11" height="11" viewBox="0 0 10 10" fill="currentColor">
+            <!-- Run state -->
+            <svg class="btn-play-icon" width="11" height="11" viewBox="0 0 10 10" fill="currentColor">
               <path d="M2 1.2L8.5 5 2 8.8V1.2Z"/>
             </svg>
-            <span class="btn-text">Run</span>
+            <span class="btn-run-text">Run</span>
+            <!-- Stop state -->
+            <svg class="btn-stop-icon" width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+              <rect x="1.5" y="1.5" width="7" height="7" rx="1.5"/>
+            </svg>
+            <span class="btn-stop-text">Stop</span>
           </button>
         </div>
       </div>
@@ -1508,6 +1501,7 @@ function createWorker() {
 function reinitWorker() {
   if (worker) { worker.terminate(); worker = null; }
   workerReady = false;
+  document.getElementById("run-btn").disabled = true;
   createWorker();
 }
 
@@ -1547,11 +1541,8 @@ function handleWorkerMessage(e) {
       finalizeLiveBlock(error, duration);
 
       isRunning = false;
-      const runBtn  = document.getElementById("run-btn");
-      const stopBtn = document.getElementById("stop-btn");
-      runBtn.disabled = false;
+      const runBtn = document.getElementById("run-btn");
       runBtn.classList.remove("running");
-      stopBtn.classList.remove("visible");
 
       if (error) {
         showToast("Execution error", "t-error", "✕");
@@ -1690,11 +1681,8 @@ function executeCode() {
   if (!code) return;
 
   isRunning = true;
-  const runBtn  = document.getElementById("run-btn");
-  const stopBtn = document.getElementById("stop-btn");
-  runBtn.disabled = true;
+  const runBtn = document.getElementById("run-btn");
   runBtn.classList.add("running");
-  stopBtn.classList.add("visible");
 
   liveT0 = performance.now();
   startLiveBlock();
@@ -1705,9 +1693,7 @@ function executeCode() {
     finalizeLiveBlock(true, "10.00");
 
     isRunning = false;
-    runBtn.disabled = false;
     runBtn.classList.remove("running");
-    stopBtn.classList.remove("visible");
     showToast("Timed out — runtime reset", "t-error", "✕");
 
     reinitWorker();
@@ -1828,26 +1814,23 @@ snippetMenu.querySelectorAll(".snippet-item").forEach((item) => {
   });
 });
 
-// ── Run button ────────────────────────────────────────────────
-document.getElementById("run-btn").addEventListener("click", executeCode);
+// ── Run / Stop unified button ─────────────────────────────────
+document.getElementById("run-btn").addEventListener("click", () => {
+  if (isRunning) {
+    // Act as Stop
+    const runBtn = document.getElementById("run-btn");
+    clearTimeout(runTimeoutId);
+    appendLiveText("stderr", "\n[PyRun] Stopped by user. Restarting runtime…");
+    finalizeLiveBlock(true, ((performance.now() - liveT0) / 1000).toFixed(2));
 
-// ── Stop button ───────────────────────────────────────────────
-document.getElementById("stop-btn").addEventListener("click", () => {
-  if (!isRunning) return;
+    isRunning = false;
+    runBtn.classList.remove("running");
+    showToast("Stopped — runtime reset", "t-error", "✕");
 
-  clearTimeout(runTimeoutId);
-  appendLiveText("stderr", "\n[PyRun] Stopped by user. Restarting runtime…");
-  finalizeLiveBlock(true, ((performance.now() - liveT0) / 1000).toFixed(2));
-
-  isRunning = false;
-  const runBtn = document.getElementById("run-btn");
-  const stopBtn = document.getElementById("stop-btn");
-  runBtn.disabled = false;
-  runBtn.classList.remove("running");
-  stopBtn.classList.remove("visible");
-  showToast("Stopped — runtime reset", "t-error", "✕");
-
-  reinitWorker();
+    reinitWorker();
+  } else {
+    executeCode();
+  }
 });
 
 // ── Clear button ──────────────────────────────────────────────
